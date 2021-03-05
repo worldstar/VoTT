@@ -151,6 +151,8 @@ export class ObjectDetection {
         const batched = tf.tidy(() => {
             if (!(img instanceof tf.Tensor)) {
                 img = tf.browser.fromPixels(img);
+                // model requires float32 input
+                img = tf.cast(img, 'float32');
             }
             // Reshape to a single-element batch so we can pass it to executeAsync.
             return img.expandDims(0);
@@ -166,7 +168,8 @@ export class ObjectDetection {
         const result = await this.model.executeAsync(batched) as tf.Tensor[];
 
         const scores = result[0].dataSync() as Float32Array;
-        const boxes = result[1].dataSync() as Float32Array;
+        //const boxes = result[1].dataSync() as Float32Array;
+        const boxes = result[1].dataSync()
 
         // clean the webgl tensors
         batched.dispose();
@@ -177,18 +180,18 @@ export class ObjectDetection {
         const prevBackend = tf.getBackend();
         // run post process in cpu
         tf.setBackend("cpu");
-        const indexTensor = tf.tidy(() => {
-            const boxes2 = tf.tensor2d(boxes, [result[1].shape[1], result[1].shape[3]]);
-            return tf.image.nonMaxSuppression(boxes2, maxScores, maxNumBoxes, 0.5, 0.5);
-        });
+        const boxes2d = tf.tensor2d(boxes, [result[1].shape[0], result[1].shape[1]]);
+        const indexTensor = await tf.image.nonMaxSuppressionAsync(boxes2d, maxScores, maxNumBoxes, 0.5, 0.5);
+
 
         const indexes = indexTensor.dataSync() as Float32Array;
         indexTensor.dispose();
 
         // restore previous backend
         tf.setBackend(prevBackend);
-
-        return this.buildDetectedObjects(width, height, boxes, maxScores, indexes, classes);
+        
+        const fboxes = boxes as Float32Array
+        return this.buildDetectedObjects(width, height, fboxes, maxScores, indexes, classes);
     }
 
     private buildDetectedObjects(
